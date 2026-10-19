@@ -1,9 +1,5 @@
-COMÉRCIOFLEX — ETAPA 2
-
-Substitua os arquivos da raiz do repositório GitHub pelos arquivos deste ZIP. Acrescente cloud.js e config.js.
-
-Inclui login/cadastro Supabase e cadastro/listagem de empresas na nuvem. Produtos, estoque, vendas, clientes e personalização continuam LOCAIS e não são separados por empresa: NÃO use com clientes reais. Painel Master e sincronização de operações ainda não implementados.
-
-A chave publishable é pública; nunca inclua secret/service_role no GitHub.
-
-Se o cadastro pedir confirmação por e-mail, confirme antes de entrar.
+COMERCIOFLEX ETAPA 3
+1. No Supabase BarberAgenda-V2, abra Editor SQL, cole ETAPA3_EXECUTAR_NO_SUPABASE.sql e execute.
+2. Extraia o ZIP e envie os arquivos index.html, app.js, config.js, icon.svg, manifest.webmanifest, service-worker.js e LEIA-ME.txt para a raiz do GitHub ComercioFlex, substituindo anteriores.
+3. Abra https://marcawrelio-cyber.github.io/ComercioFlex/?v=3
+IMPORTANTE: Apenas para testes. Dados da Etapa 1/2 no navegador NAO sao migrados automaticamente. Fotografia de fundo ainda e local. Painel Master e assinatura nao estao implementados. Venda usa funcao SQL atomica; nao altere tabelas do BarberAgenda.
