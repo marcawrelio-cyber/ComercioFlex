@@ -1,9 +1,9 @@
-COMÉRCIOFLEX — ETAPA 1
+COMÉRCIOFLEX — ETAPA 2
 
-1. Extraia o ZIP em uma pasta no celular.
-2. Abra index.html pelo Acode para testar.
-3. Para instalar como aplicativo e ativar o modo offline, publique a pasta em um site HTTPS (por exemplo, GitHub Pages) e abra no Chrome > menu > Adicionar à tela inicial/Instalar.
+Substitua os arquivos da raiz do repositório GitHub pelos arquivos deste ZIP. Acrescente cloud.js e config.js.
 
-Incluído: painel, empresa, ramos, foto própria, produtos, estoque, vendas, clientes, backup JSON e PWA básico.
+Inclui login/cadastro Supabase e cadastro/listagem de empresas na nuvem. Produtos, estoque, vendas, clientes e personalização continuam LOCAIS e não são separados por empresa: NÃO use com clientes reais. Painel Master e sincronização de operações ainda não implementados.
 
-IMPORTANTE: dados ficam no localStorage deste navegador, sem login, sem banco de dados, sem painel Master e sem sincronização. Não use para operar um comércio real nesta etapa. Faça backup antes de limpar os dados do navegador. A próxima etapa integrará Supabase, autenticação e separação de empresas.
+A chave publishable é pública; nunca inclua secret/service_role no GitHub.
+
+Se o cadastro pedir confirmação por e-mail, confirme antes de entrar.
