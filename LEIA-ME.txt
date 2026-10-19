@@ -3,3 +3,4 @@ COMERCIOFLEX ETAPA 3
 2. Extraia o ZIP e envie os arquivos index.html, app.js, config.js, icon.svg, manifest.webmanifest, service-worker.js e LEIA-ME.txt para a raiz do GitHub ComercioFlex, substituindo anteriores.
 3. Abra https://marcawrelio-cyber.github.io/ComercioFlex/?v=3
 IMPORTANTE: Apenas para testes. Dados da Etapa 1/2 no navegador NAO sao migrados automaticamente. Fotografia de fundo ainda e local. Painel Master e assinatura nao estao implementados. Venda usa funcao SQL atomica; nao altere tabelas do BarberAgenda.
+Publicação ComércioFlex Etapa 4
