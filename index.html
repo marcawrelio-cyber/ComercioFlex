@@ -12,4 +12,23 @@
 <section id="fornecedores" class="hide"><div class="card"><h2>Novo fornecedor</h2><form id="supplierForm"><label>Nome<input id="sName" required></label><label>Contato<input id="sContact"></label><button>Salvar fornecedor</button></form></div><div class="card"><h2>Fornecedores</h2><div id="suppliersList"></div></div></section>
 <section id="financeiro" class="hide"><div class="card"><h2>Nova movimentação</h2><form id="financeForm"><label>Descrição<input id="fDescription" required></label><label>Tipo<select id="fType"><option value="entrada">Entrada</option><option value="saida">Saída</option></select></label><label>Valor<input id="fValue" type="number" step=".01" min="0" required></label><label>Vencimento<input id="fDate" type="date"></label><label><input id="fPaid" type="checkbox" style="width:auto"> Pago / recebido</label><button>Salvar movimentação</button></form></div><div class="card"><h2>Movimentações</h2><div id="financeList"></div></div></section>
 <section id="visual" class="hide"><div class="card"><h2>Foto de fundo</h2><p>Escolha uma foto do estabelecimento (JPG, PNG ou WebP, até 2 MB). Nesta versão a foto fica apenas neste navegador; os registros comerciais ficam na nuvem.</p><input id="photo" type="file" accept="image/jpeg,image/png,image/webp"><button id="removePhoto" class="alt">Retirar foto</button></div></section>
-</div></main><footer>ComércioFlex • Etapa 3 • Testes</footer><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script><script src="config.js"></script><script src="app.js"></script></body></html>
+</div></main><footer>ComércioFlex • Etapa 3 • Testes</footer><script>
+window.addEventListener('error',function(e){var s=document.getElementById('status');if(s){s.textContent='Falha ao iniciar: '+(e.message||'erro desconhecido');s.className='error'}});
+window.addEventListener('unhandledrejection',function(e){var s=document.getElementById('status');if(s){s.textContent='Erro na conexão: '+(e.reason?.message||'verifique sua internet');s.className='error'}});
+(function(){
+ var urls=['https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js','https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js'];
+ var status=document.getElementById('status'),timer;
+ function fail(t){status.textContent=t;status.className='error'}
+ function load(i){
+  if(i>=urls.length){fail('Não foi possível carregar a biblioteca de conexão. Verifique a internet e recarregue.');return}
+  var s=document.createElement('script');s.src=urls[i];s.async=false;
+  var done=false;
+  timer=setTimeout(function(){if(done)return;done=true;s.remove();load(i+1)},12000);
+  s.onerror=function(){if(done)return;done=true;clearTimeout(timer);load(i+1)};
+  s.onload=function(){if(done)return;done=true;clearTimeout(timer);if(!window.supabase){load(i+1);return}
+    var c=document.createElement('script');c.src='config.js?v=3fix2';c.onload=function(){var a=document.createElement('script');a.src='app.js?v=3fix2';a.onerror=function(){fail('Não foi possível carregar app.js')};document.body.appendChild(a)};c.onerror=function(){fail('Não foi possível carregar config.js')};document.body.appendChild(c);
+  };document.body.appendChild(s)
+ }
+ load(0)
+})();
+</script></body></html>
