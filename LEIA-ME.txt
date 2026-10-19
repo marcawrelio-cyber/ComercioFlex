@@ -1,0 +1,9 @@
+COMÉRCIOFLEX — ETAPA 1
+
+1. Extraia o ZIP em uma pasta no celular.
+2. Abra index.html pelo Acode para testar.
+3. Para instalar como aplicativo e ativar o modo offline, publique a pasta em um site HTTPS (por exemplo, GitHub Pages) e abra no Chrome > menu > Adicionar à tela inicial/Instalar.
+
+Incluído: painel, empresa, ramos, foto própria, produtos, estoque, vendas, clientes, backup JSON e PWA básico.
+
+IMPORTANTE: dados ficam no localStorage deste navegador, sem login, sem banco de dados, sem painel Master e sem sincronização. Não use para operar um comércio real nesta etapa. Faça backup antes de limpar os dados do navegador. A próxima etapa integrará Supabase, autenticação e separação de empresas.
