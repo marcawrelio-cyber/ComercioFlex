@@ -7,16 +7,16 @@ let user=null,company=null,companies=[],products=[],sales=[],clients=[],supplier
 function message(t,bad=false){$('status').textContent=t;$('status').className=bad?'error':'good'}
 function err(e){alert('Erro: '+(e?.message||e))}
 async function query(table){let {data,error}=await client.from(table).select('*').eq('empresa_id',company.id);if(error)throw error;return data||[]}
-async function init(){try{let {data,error}=await wait(client.auth.getSession());if(error&&!error.message?.includes('session'))console.log(error.message);user=data?.session?.user||null;await loadCompanies()}catch(e){message(e.message,true)}}
-async function loadCompanies(){ $('loginBox').classList.toggle('hide',!!user);$('loggedBox').classList.toggle('hide',!user);if(!user){company=null;$('work').classList.add('hide');$('companyLabel').textContent='Sem empresa';message('Entre ou crie sua conta.');return}
+async function init(){document.body.classList.add('cf-loading');$('work').classList.add('hide');$('loginBox').classList.add('hide');$('loggedBox').classList.add('hide');try{let {data,error}=await wait(client.auth.getSession());if(error&&!error.message?.includes('session'))console.log(error.message);user=data?.session?.user||null;await loadCompanies()}catch(e){message(e.message,true);$('loginBox').classList.remove('hide')}finally{document.body.classList.remove('cf-loading')}}
+async function loadCompanies(){ $('work').classList.add('hide');$('loginBox').classList.toggle('hide',!!user);$('loggedBox').classList.toggle('hide',!user);if(!user){company=null;$('work').classList.add('hide');$('companyLabel').textContent='Sem empresa';message('Entre ou crie sua conta.');return}
 message('Conectado: '+user.email);
 const {data,error}=await wait(client.from('cf_empresas').select('id,nome,ramo,tema,owner_id'));if(error)throw error;companies=data||[];
 const select=$('companies');let previous=company?.id||sessionStorage.getItem('cf_active');select.replaceChildren();
 companies.forEach(c=>{let o=document.createElement('option');o.value=c.id;o.textContent=c.nome+' — '+c.ramo;select.append(o)});
 company=companies.find(c=>c.id===previous)||companies[0]||null;if(company){select.value=company.id;sessionStorage.setItem('cf_active',company.id);await refresh()}else{$('work').classList.add('hide');$('companyLabel').textContent='Crie uma empresa'}
 }
-async function refresh(){if(!company)return;$('work').classList.remove('hide');$('companyLabel').textContent=company.nome;$('hello').textContent='Bem-vindo à '+company.nome;$('companyInfo').textContent=company.nome+' • '+company.ramo;
-try{[products,sales,clients,suppliers,finances]=await Promise.all(['cf_produtos','cf_vendas','cf_clientes','cf_fornecedores','cf_financeiro'].map(query));await loadOperations();draw();drawOperations()}catch(e){err(e)}}
+async function refresh(){if(!company)return;$('work').classList.add('hide');$('companyLabel').textContent=company.nome;$('hello').textContent='Bem-vindo à '+company.nome;$('companyInfo').textContent=company.nome+' • '+company.ramo;
+try{[products,sales,clients,suppliers,finances]=await Promise.all(['cf_produtos','cf_vendas','cf_clientes','cf_fornecedores','cf_financeiro'].map(query));await loadOperations();draw();drawOperations();$('work').classList.remove('hide')}catch(e){$('work').classList.add('hide');err(e)}}
 function line(target,title,description){let r=document.createElement('div');r.className='line';let a=document.createElement('strong'),b=document.createElement('span');a.textContent=title;b.textContent=description;r.append(a,b);$(target).append(r)}
 function clear(id){$(id).replaceChildren()}
 function draw(){
@@ -174,7 +174,7 @@ function drawOperations(){
  const access={equipe:myRole==='proprietario',caixas:roleCan('vender')||roleCan('gestao'),relatorios:roleCan('gestao'),
  produtos:roleCan('estoque')||roleCan('vender'),vendas:roleCan('vender'),clientes:roleCan('gestao'),
  fornecedores:roleCan('gestao'),financeiro:roleCan('gestao'),visual:roleCan('gestao')};
- document.querySelectorAll('nav button').forEach(b=>{b.classList.toggle('hide',access[b.dataset.page]===false)});
+ document.querySelectorAll('nav button').forEach(b=>{b.classList.toggle('hide',access[b.dataset.page]===false)});const active=document.querySelector('#work section:not(.hide)');if(active&&access[active.id]===false){document.querySelectorAll('#work section').forEach(s=>s.classList.toggle('hide',s.id!=='inicio'));}
  ['productForm','stockForm'].forEach(id=>$(id).classList.toggle('hide',id==='productForm'?!roleCan('gestao'):!roleCan('estoque')));
  ['clientForm','supplierForm','financeForm'].forEach(id=>$(id).classList.toggle('hide',!roleCan('gestao')));
  $('newRegisterForm').classList.toggle('hide',!roleCan('gestao'));
@@ -260,3 +260,47 @@ $('reportCsv').onclick=()=>{
 
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
 init();
+
+// Etapa 8: carrinho e comprovantes. Todas as vendas do carrinho são uma transação SQL única.
+let posCart=[];let cashMovements=[];
+const posMoney=n=>Math.round(Number(n||0)*100)/100;
+function posTotal(){return posMoney(posCart.reduce((s,i)=>s+i.preco*i.quantidade,0)-Number($('posDiscount').value||0))}
+function posRender(){
+ $('posCart').replaceChildren();for(const item of posCart){
+  const row=document.createElement('div');row.className='line';const label=document.createElement('strong');label.textContent=item.nome+' · '+item.quantidade+' × '+fmt(item.preco);
+  const del=document.createElement('button');del.type='button';del.className='alt';del.textContent='Remover';del.onclick=()=>{posCart=posCart.filter(i=>i.id!==item.id);posRender()};row.append(label,del);$('posCart').append(row);
+ }$('posTotal').textContent='Total: '+fmt(Math.max(0,posTotal()));
+}
+function posRefresh(){
+ const filter=$('posSearch').value.toLocaleLowerCase('pt-BR');const prev=$('posProduct').value;$('posProduct').replaceChildren();
+ products.filter(x=>Number(x.estoque)>0&&x.nome.toLocaleLowerCase('pt-BR').includes(filter)).forEach(x=>$('posProduct').append(makeOption(x.id,x.nome+' — '+fmt(x.preco)+' ('+x.estoque+')')));
+ if([...$('posProduct').options].some(x=>x.value===prev))$('posProduct').value=prev;
+ $('posShift').replaceChildren();$('cashMovementShift').replaceChildren();
+ shifts.filter(x=>!x.fechado_em&&(x.operador_id===user?.id||roleCan('gestao'))).forEach(x=>{const name=registers.find(r=>r.id===x.caixa_id)?.nome||'Caixa';$('posShift').append(makeOption(x.id,name));$('cashMovementShift').append(makeOption(x.id,name))});
+ $('cashMovementList').replaceChildren();cashMovements.slice().sort((a,b)=>String(b.criado_em).localeCompare(String(a.criado_em))).slice(0,20).forEach(x=>line('cashMovementList',x.tipo+' · '+fmt(x.valor),x.motivo));
+ posRender();
+}
+$('posSearch').oninput=posRefresh;$('posDiscount').oninput=posRender;
+$('posPayment').onchange=()=>$('posMixed').classList.toggle('hide',$('posPayment').value!=='misto');
+$('posAdd').onclick=()=>{const p=products.find(x=>x.id===$('posProduct').value),qty=Number($('posQty').value);if(!p||!Number.isInteger(qty)||qty<1)return alert('Selecione um produto e uma quantidade válida.');
+ const found=posCart.find(x=>x.id===p.id),current=found?.quantidade||0;if(current+qty>Number(p.estoque))return alert('Quantidade acima do estoque.');
+ if(found)found.quantidade+=qty;else posCart.push({id:p.id,nome:p.nome,preco:Number(p.preco),quantidade:qty});posRender();};
+function receiptPrint(sale,items,amount,payment){
+ const root=$('printArea');root.replaceChildren();const block=document.createElement('div');block.style.maxWidth=$('receiptWidth').value+'mm';block.style.margin='auto';
+ const header=document.createElement('h3');header.textContent=company.nome;block.append(header);
+ const info=document.createElement('p');info.textContent='COMPROVANTE NÃO FISCAL\n'+new Date().toLocaleString('pt-BR')+'\nVenda: '+String(sale||'TESTE');info.style.whiteSpace='pre-line';block.append(info);
+ const table=document.createElement('table');for(const i of items){const tr=document.createElement('tr'),a=document.createElement('td'),b=document.createElement('td');a.textContent=i.nome+' '+i.quantidade+'×';b.textContent=fmt(i.preco*i.quantidade);tr.append(a,b);table.append(tr)}block.append(table);
+ const footer=document.createElement('p');footer.textContent='TOTAL: '+fmt(amount)+' | '+payment+'\nDocumento sem valor fiscal';footer.style.whiteSpace='pre-line';block.append(footer);root.append(block);window.print();
+}
+$('testReceipt').onclick=()=>receiptPrint('TESTE',[{nome:'Produto teste',quantidade:1,preco:1}],1,'teste');
+$('posFinish').onclick=async()=>{if(!company||!roleCan('vender'))return alert('Sem permissão.');if(!posCart.length)return alert('Carrinho vazio.');if(!$('posShift').value)return alert('Abra um turno de caixa.');
+ const discount=posMoney($('posDiscount').value),subtotal=posMoney(posCart.reduce((s,i)=>s+i.preco*i.quantidade,0));if(!Number.isFinite(discount)||discount<0||discount>subtotal)return alert('Desconto inválido.');
+ const amount=posMoney(subtotal-discount),payment=$('posPayment').value;let breakdown={};
+ if(payment==='misto'){breakdown={dinheiro:posMoney($('posCash').value),pix:posMoney($('posPix').value),cartao:posMoney($('posCard').value)};if(Object.values(breakdown).some(x=>!Number.isFinite(x)||x<0)||Math.abs(Object.values(breakdown).reduce((a,b)=>a+b,0)-amount)>.009)return alert('A soma dos pagamentos deve ser igual ao total.');}
+ else breakdown={[payment]:amount};
+ if(!confirm('Finalizar venda de '+fmt(amount)+' com '+posCart.length+' produto(s)?'))return;const button=$('posFinish');button.disabled=true;
+ try{const items=posCart.map(x=>({produto_id:x.id,quantidade:x.quantidade}));const {data,error}=await client.rpc('cf8_vender_carrinho',{p_empresa:company.id,p_turno:$('posShift').value,p_itens:items,p_desconto:discount,p_pagamentos:breakdown});if(error)throw error;const copy=posCart.map(x=>({...x}));posCart=[];$('posDiscount').value='0';await refresh();if($('autoPrint').checked)receiptPrint(data,copy,amount,payment);else alert('Venda registrada! '+fmt(amount));}catch(e){err(e)}finally{button.disabled=false}
+};
+$('cashMovementForm').onsubmit=async e=>{e.preventDefault();try{const {error}=await client.rpc('cf8_movimentar_caixa',{p_turno:$('cashMovementShift').value,p_tipo:$('cashMovementType').value,p_valor:Number($('cashMovementValue').value),p_motivo:$('cashMovementReason').value.trim()});if(error)throw error;e.target.reset();await refresh();alert('Movimentação registrada.')}catch(ex){err(ex)}};
+const cf8OriginalDrawOperations=drawOperations;drawOperations=function(){cf8OriginalDrawOperations();$('posPanel').classList.toggle('hide',!roleCan('vender'));posRefresh()};
+const cf8OriginalLoadOperations=loadOperations;loadOperations=async function(){if(window.cf8LastCompany!==company.id){posCart=[];window.cf8LastCompany=company.id}await cf8OriginalLoadOperations();const {data,error}=await client.from('cf8_movimentos_caixa').select('*').eq('empresa_id',company.id);if(error)throw error;cashMovements=data||[]};
