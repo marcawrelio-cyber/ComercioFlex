@@ -27,7 +27,7 @@ sales.sort((a,b)=>b.criada_em.localeCompare(a.criada_em)).slice(0,30).forEach(x=
 clients.filter(x=>(x.nome+' '+(x.whatsapp||'')).toLocaleLowerCase('pt-BR').includes($('clientSearch').value.toLocaleLowerCase('pt-BR'))).forEach(x=>{line('clientsList',x.nome,x.whatsapp||'Sem contato');actionButton('clientsList','Editar',()=>editClient(x))});
 suppliers.forEach(x=>line('suppliersList',x.nome,x.contato||'Sem contato'));
 finances.sort((a,b)=>String(b.id).localeCompare(String(a.id))).forEach(x=>line('financeList',x.descricao,(x.tipo==='entrada'?'+ ':'− ')+fmt(x.valor)+' • '+(x.pago?'Pago':'Pendente')));
-const ins=finances.filter(x=>x.pago&&x.tipo==='entrada').reduce((a,x)=>a+Number(x.valor),0),outs=finances.filter(x=>x.pago&&x.tipo==='saida').reduce((a,x)=>a+Number(x.valor),0),pending=finances.filter(x=>!x.pago).reduce((a,x)=>a+Number(x.valor),0);$('totalIn').textContent=fmt(ins);$('totalOut').textContent=fmt(outs);$('totalBalance').textContent=fmt(ins-outs);$('totalPending').textContent=fmt(pending);applyTransparency();const key='cf_photo_'+company.id;let photo=localStorage.getItem(key);document.body.style.setProperty('--photo',photo?'url("'+photo+'")':'linear-gradient(130deg,#12344c,#14283e)');loadGallery(company.id);
+const ins=finances.filter(x=>x.pago&&x.tipo==='entrada').reduce((a,x)=>a+Number(x.valor),0),outs=finances.filter(x=>x.pago&&x.tipo==='saida').reduce((a,x)=>a+Number(x.valor),0),pending=finances.filter(x=>!x.pago).reduce((a,x)=>a+Number(x.valor),0);$('totalIn').textContent=fmt(ins);$('totalOut').textContent=fmt(outs);$('totalBalance').textContent=fmt(ins-outs);$('totalPending').textContent=fmt(pending);loadGallery(company.id);
 }
 async function insert(table,obj,form){try{if(!company)throw Error('Selecione uma empresa');const {error}=await client.from(table).insert({...obj,empresa_id:company.id});if(error)throw error;form.reset();await refresh();alert('Salvo na nuvem!')}catch(e){err(e)}}
 function actionButton(target,title,fn){let b=document.createElement('button');b.className='alt';b.style.margin='3px 0 12px';b.style.fontSize='13px';b.textContent=title;b.onclick=fn;$(target).append(b)}
@@ -51,110 +51,106 @@ $('createCompany').onclick=async()=>{try{let nome=$('newCompany').value.trim();i
 $('companies').onchange=async()=>{company=companies.find(x=>x.id===$('companies').value);sessionStorage.setItem('cf_active',company.id);await refresh()};
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#work section').forEach(s=>s.classList.toggle('hide',s.id!==b.dataset.page));document.querySelectorAll('nav button').forEach(x=>x.className=x===b?'':'alt')});
 
-function applyTransparency(){
- if(!company)return;
- const saved=localStorage.getItem('cf_transparency_'+company.id);
- const value=saved===null?65:Math.max(0,Math.min(100,Number(saved)||0));
+// Galeria privada na nuvem, com seleção e transparência por empresa.
+// O bucket não é público: a leitura das fotos usa URLs temporárias.
+const BUCKET='cf-fotos';
+let galleryRender=0, galleryUrls=[],cloudPhotoUrl=null, visualSettings=null, visualSaveTimer=null;
+const safeName=name=>(name||'foto').replace(/[^a-zA-Z0-9._-]/g,'_').slice(-70);
+function applyTransparency(value){
+ value=Math.max(0,Math.min(100,Number(value??65)));
  document.body.style.setProperty('--card-alpha',String((100-value)/100));
- $('cardTransparency').value=String(value);
- $('transparencyValue').textContent=value+'%';
+ $('cardTransparency').value=String(value);$('transparencyValue').textContent=value+'%';
+}
+async function getVisualSettings(companyId){
+ const {data,error}=await client.from('cf_visual_config').select('transparencia,foto_ativa').eq('empresa_id',companyId).maybeSingle();
+ if(error)throw error;return data||{transparencia:65,foto_ativa:null};
+}
+async function saveVisualSettings(companyId,changes){
+ const {error}=await client.from('cf_visual_config').upsert({empresa_id:companyId,...changes},{onConflict:'empresa_id'});
+ if(error)throw error;
 }
 $('cardTransparency').addEventListener('input',e=>{
- if(!company)return;
- const value=Math.max(0,Math.min(100,Number(e.target.value)));
- localStorage.setItem('cf_transparency_'+company.id,String(value));
- applyTransparency();
+ if(!company)return;const id=company.id,v=Number(e.target.value);
+ applyTransparency(v);localStorage.setItem('cf_transparency_'+id,String(v));
+ clearTimeout(visualSaveTimer);
+ visualSaveTimer=setTimeout(async()=>{
+  try{await saveVisualSettings(id,{transparencia:v,foto_ativa:visualSettings?.foto_ativa||null})}
+  catch(ex){$('galleryStatus').textContent='Não foi possível salvar a transparência na nuvem: '+ex.message}
+ },500);
 });
-$('resetTransparency').onclick=()=>{
- if(!company)return;
- localStorage.setItem('cf_transparency_'+company.id,'65');
- applyTransparency();
-};
-
-
-// Galeria local: IndexedDB evita estourar o pequeno limite do localStorage.
-// Cada imagem pertence a uma empresa; a foto de fundo antiga é preservada.
-const galleryDb=new Promise((resolve,reject)=>{
- const request=indexedDB.open('ComercioFlexGaleria',1);
- request.onupgradeneeded=()=>{
-  const db=request.result;
-  const store=db.createObjectStore('fotos',{keyPath:'id',autoIncrement:true});
-  store.createIndex('empresa','empresa',{unique:false});
- };
- request.onsuccess=()=>resolve(request.result);
- request.onerror=()=>reject(request.error);
-});
-function galleryTransaction(mode,operation){
- return galleryDb.then(db=>new Promise((resolve,reject)=>{
-  const tx=db.transaction('fotos',mode);
-  const request=operation(tx.objectStore('fotos'));
-  request.onsuccess=()=>resolve(request.result);
-  request.onerror=()=>reject(request.error);
- }));
+$('resetTransparency').onclick=()=>{$('cardTransparency').value='65';$('cardTransparency').dispatchEvent(new Event('input'))};
+async function listCloudPhotos(id){
+ const {data,error}=await client.from('cf_fotos').select('id,nome,caminho,criada_em').eq('empresa_id',id).order('criada_em',{ascending:false});
+ if(error)throw error;return data||[];
 }
-const listGallery=id=>galleryTransaction('readonly',store=>store.index('empresa').getAll(id));
-const saveGallery=entry=>galleryTransaction('readwrite',store=>store.add(entry));
-const deleteGallery=id=>galleryTransaction('readwrite',store=>store.delete(id));
-let currentPhotoUrl=null, galleryUrls=[];
-function setPhotoBackground(url){
- if(currentPhotoUrl){URL.revokeObjectURL(currentPhotoUrl);currentPhotoUrl=null;}
- if(url){currentPhotoUrl=url;document.body.style.setProperty('--photo','url("'+url+'")');}
- else{
-  const old=company&&localStorage.getItem('cf_photo_'+company.id);
-  document.body.style.setProperty('--photo',old?'url("'+old+'")':'linear-gradient(130deg,#12344c,#14283e)');
- }
+async function showCloudBackground(path){
+ if(!path){document.body.style.setProperty('--photo','linear-gradient(130deg,#12344c,#14283e)');return}
+ const {data,error}=await client.storage.from(BUCKET).createSignedUrl(path,3600);
+ if(error)throw error;
+ document.body.style.setProperty('--photo',`url("${data.signedUrl}")`);
 }
-async function loadGallery(companyId){
- const target=$('photoGallery'),status=$('galleryStatus');
- if(!target)return;
- galleryUrls.forEach(url=>URL.revokeObjectURL(url));galleryUrls=[];
- target.replaceChildren();status.textContent='Carregando fotos...';
+async function loadGallery(id){
+ const token=++galleryRender, target=$('photoGallery'),status=$('galleryStatus');
+ target.replaceChildren();status.textContent='Carregando galeria na nuvem...';
  try{
-  const items=await listGallery(companyId);
-  if(!company||company.id!==companyId)return;
-  const selected=localStorage.getItem('cf_gallery_active_'+companyId);
-  const active=items.find(item=>String(item.id)===selected);
-  if(active)setPhotoBackground(URL.createObjectURL(active.blob));
-  else setPhotoBackground(null);
-  status.textContent=items.length?items.length+' foto(s) nesta galeria.':'Nenhuma foto na galeria ainda.';
-  for(const item of items){
-   const card=document.createElement('div');card.className='gallery-item'+(active?.id===item.id?' active':'');
-   const preview=document.createElement('img');const url=URL.createObjectURL(item.blob);galleryUrls.push(url);
-   preview.src=url;preview.alt='Foto '+item.nome;
-   const name=document.createElement('span');name.className='photo-name';name.textContent=item.nome;name.title=item.nome;
-   const choose=document.createElement('button');choose.textContent=active?.id===item.id?'Em uso':'Usar como fundo';
-   choose.onclick=()=>{localStorage.setItem('cf_gallery_active_'+companyId,String(item.id));loadGallery(companyId)};
+  const [settings,photos]=await Promise.all([getVisualSettings(id),listCloudPhotos(id)]);
+  if(token!==galleryRender||!company||company.id!==id)return;
+  visualSettings=settings;applyTransparency(settings.transparencia);
+  await showCloudBackground(photos.find(x=>x.id===settings.foto_ativa)?.caminho||null);
+  status.textContent=photos.length+' foto(s) na nuvem.';
+  for(const photo of photos){
+   const card=document.createElement('div');card.className='gallery-item'+(settings.foto_ativa===photo.id?' active':'');
+   const preview=document.createElement('img');preview.alt=photo.nome;preview.loading='lazy';
+   client.storage.from(BUCKET).createSignedUrl(photo.caminho,3600).then(({data,error})=>{if(!error&&token===galleryRender)preview.src=data.signedUrl});
+   const label=document.createElement('span');label.className='photo-name';label.textContent=photo.nome;
+   const choose=document.createElement('button');choose.textContent=settings.foto_ativa===photo.id?'Em uso':'Usar como fundo';
+   choose.onclick=async()=>{try{await saveVisualSettings(id,{transparencia:Number($('cardTransparency').value),foto_ativa:photo.id});await loadGallery(id)}catch(e){alert('Erro: '+e.message)}};
    const remove=document.createElement('button');remove.className='gallery-delete';remove.textContent='Excluir foto';
    remove.onclick=async()=>{
-    if(!confirm('Excluir esta foto da galeria deste navegador?'))return;
+    if(!confirm('Excluir esta foto da nuvem?'))return;
     try{
-     await deleteGallery(item.id);
-     if(localStorage.getItem('cf_gallery_active_'+companyId)===String(item.id))localStorage.removeItem('cf_gallery_active_'+companyId);
-     await loadGallery(companyId);
-    }catch(e){alert('Não foi possível excluir a foto: '+e.message)}
+     if(visualSettings?.foto_ativa===photo.id)await saveVisualSettings(id,{transparencia:Number($('cardTransparency').value),foto_ativa:null});
+     const {error:storageError}=await client.storage.from(BUCKET).remove([photo.caminho]);if(storageError)throw storageError;
+     const {error}=await client.from('cf_fotos').delete().eq('id',photo.id).eq('empresa_id',id);if(error)throw error;
+     await loadGallery(id);
+    }catch(e){alert('Erro ao excluir: '+e.message)}
    };
-   card.append(preview,name,choose,remove);target.append(card);
+   card.append(preview,label,choose,remove);target.append(card);
   }
- }catch(e){status.textContent='Não foi possível abrir a galeria neste navegador: '+e.message}
+ }catch(e){status.textContent='Não foi possível acessar a galeria na nuvem. Execute o SQL da Etapa 6: '+e.message}
+}
+async function uploadCloudPhoto(id,file){
+ if(file.size>2*1024*1024||!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('Use JPG, PNG ou WebP até 2 MB');
+ const path=id+'/'+crypto.randomUUID()+'-'+safeName(file.name);
+ const {error:upError}=await client.storage.from(BUCKET).upload(path,file,{contentType:file.type,upsert:false});
+ if(upError)throw upError;
+ const {data,error}=await client.from('cf_fotos').insert({empresa_id:id,nome:file.name,caminho:path}).select('id').single();
+ if(error){await client.storage.from(BUCKET).remove([path]);throw error}
+ return data.id;
 }
 $('photo').onchange=async e=>{
  const f=e.target.files[0];if(!f||!company)return;
- if(f.size>2*1024*1024||!['image/jpeg','image/png','image/webp'].includes(f.type)){
-  alert('Use JPG, PNG ou WebP até 2 MB');e.target.value='';return;
- }
- const companyId=company.id;
- try{
-  const id=await saveGallery({empresa:companyId,nome:f.name,blob:f,criadoEm:Date.now()});
-  localStorage.setItem('cf_gallery_active_'+companyId,String(id));
-  if(company?.id===companyId)await loadGallery(companyId);
-  e.target.value='';
- }catch(ex){alert('Não foi possível salvar esta foto. Verifique o espaço livre do navegador. '+ex.message)}
+ const id=company.id;const status=$('galleryStatus');status.textContent='Enviando foto para a nuvem...';
+ try{const photoId=await uploadCloudPhoto(id,f);await saveVisualSettings(id,{transparencia:Number($('cardTransparency').value),foto_ativa:photoId});await loadGallery(id)}
+ catch(ex){status.textContent='Falha ao enviar: '+ex.message}finally{e.target.value=''}
 };
-$('removePhoto').onclick=()=>{
+$('removePhoto').onclick=async()=>{
  if(!company)return;
- localStorage.removeItem('cf_gallery_active_'+company.id);
- localStorage.removeItem('cf_photo_'+company.id);
- loadGallery(company.id);
+ try{await saveVisualSettings(company.id,{transparencia:Number($('cardTransparency').value),foto_ativa:null});await loadGallery(company.id)}
+ catch(e){alert('Erro: '+e.message)}
+};
+// Migração manual e segura das fotos da Etapa 5 armazenadas no IndexedDB.
+$('importLocal').onclick=async()=>{
+ if(!company)return;const id=company.id,status=$('galleryStatus');
+ try{
+  const db=await new Promise((resolve,reject)=>{const req=indexedDB.open('ComercioFlexGaleria',1);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)});
+  const photos=await new Promise((resolve,reject)=>{const req=db.transaction('fotos','readonly').objectStore('fotos').index('empresa').getAll(id);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)});
+  if(!photos.length){status.textContent='Não há fotos antigas neste navegador para importar.';return}
+  if(!confirm('Importar '+photos.length+' foto(s) antigas para a nuvem? Elas continuarão guardadas neste navegador.'))return;
+  let count=0,failures=[];status.textContent='Importando fotos...';
+  for(const item of photos){try{await uploadCloudPhoto(id,new File([item.blob],item.nome,{type:item.blob.type}));count++}catch(e){failures.push(item.nome+': '+e.message)}}
+  await loadGallery(id);status.textContent=count+' foto(s) importadas. '+(failures.length?'Falhas: '+failures.join('; '):'As fotos antigas continuam no navegador.');
+ }catch(e){status.textContent='Falha na importação: '+e.message}
 };
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
 init();
