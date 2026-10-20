@@ -8,14 +8,14 @@ function message(t,bad=false){$('status').textContent=t;$('status').className=ba
 function err(e){alert('Erro: '+(e?.message||e))}
 async function query(table){let {data,error}=await client.from(table).select('*').eq('empresa_id',company.id);if(error)throw error;return data||[]}
 async function init(){document.body.classList.add('cf-loading');$('work').classList.add('hide');$('loginBox').classList.add('hide');$('loggedBox').classList.add('hide');try{let {data,error}=await wait(client.auth.getSession());if(error&&!error.message?.includes('session'))console.log(error.message);user=data?.session?.user||null;await loadCompanies()}catch(e){message(e.message,true);$('loginBox').classList.remove('hide')}finally{document.body.classList.remove('cf-loading')}}
-async function loadCompanies(){ $('work').classList.add('hide');$('loginBox').classList.toggle('hide',!!user);$('loggedBox').classList.toggle('hide',!user);if(!user){company=null;$('work').classList.add('hide');$('companyLabel').textContent='Sem empresa';message('Entre ou crie sua conta.');return}
+async function loadCompanies(){ myRole=null;$('work').classList.add('hide');$('loginBox').classList.toggle('hide',!!user);$('loggedBox').classList.toggle('hide',!user);if(!user){company=null;$('work').classList.add('hide');$('companyLabel').textContent='Sem empresa';message('Entre ou crie sua conta.');return}
 message('Conectado: '+user.email);
 const {data,error}=await wait(client.from('cf_empresas').select('id,nome,ramo,tema,owner_id'));if(error)throw error;companies=data||[];
 const select=$('companies');let previous=company?.id||sessionStorage.getItem('cf_active');select.replaceChildren();
 companies.forEach(c=>{let o=document.createElement('option');o.value=c.id;o.textContent=c.nome+' — '+c.ramo;select.append(o)});
 company=companies.find(c=>c.id===previous)||companies[0]||null;if(company){select.value=company.id;sessionStorage.setItem('cf_active',company.id);await refresh()}else{$('work').classList.add('hide');$('companyLabel').textContent='Crie uma empresa'}
 }
-async function refresh(){if(!company)return;$('work').classList.add('hide');$('companyLabel').textContent=company.nome;$('hello').textContent='Bem-vindo à '+company.nome;$('companyInfo').textContent=company.nome+' • '+company.ramo;
+async function refresh(){if(!company)return;myRole=null;$('work').classList.add('hide');$('companyLabel').textContent=company.nome;$('hello').textContent='Bem-vindo à '+company.nome;$('companyInfo').textContent=company.nome+' • '+company.ramo;
 try{[products,sales,clients,suppliers,finances]=await Promise.all(['cf_produtos','cf_vendas','cf_clientes','cf_fornecedores','cf_financeiro'].map(query));await loadOperations();draw();drawOperations();$('work').classList.remove('hide')}catch(e){$('work').classList.add('hide');err(e)}}
 function line(target,title,description){let r=document.createElement('div');r.className='line';let a=document.createElement('strong'),b=document.createElement('span');a.textContent=title;b.textContent=description;r.append(a,b);$(target).append(r)}
 function clear(id){$(id).replaceChildren()}
@@ -49,7 +49,18 @@ $('signupBtn').onclick=async()=>{try{let {data,error}=await wait(client.auth.sig
 $('logoutBtn').onclick=async()=>{await client.auth.signOut();user=null;company=null;await loadCompanies()};
 $('createCompany').onclick=async()=>{try{let nome=$('newCompany').value.trim();if(!nome)throw Error('Digite o nome');let {error}=await client.from('cf_empresas').insert({nome,ramo:$('newBranch').value,owner_id:user.id});if(error)throw error;$('newCompany').value='';await loadCompanies();alert('Empresa criada na nuvem!')}catch(e){err(e)}};
 $('companies').onchange=async()=>{company=companies.find(x=>x.id===$('companies').value);sessionStorage.setItem('cf_active',company.id);await refresh()};
-document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#work section').forEach(s=>s.classList.toggle('hide',s.id!==b.dataset.page));document.querySelectorAll('nav button').forEach(x=>x.className=x===b?'':'alt')});
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+ const page=b.dataset.page;
+ // A classe hide nunca pode ser removida pela selecao visual do menu.
+ if(!company||!myRole||!cfCanOpenPage(page)||b.classList.contains('hide'))return;
+ document.querySelectorAll('#work section').forEach(s=>s.classList.toggle('hide',s.id!==page));
+ document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('alt',x!==b));
+});
+function cfCanOpenPage(page){
+ if(!user||!company||!myRole)return false;
+ const permissions={inicio:true,produtos:roleCan('estoque')||roleCan('vender'),vendas:roleCan('vender'),caixas:roleCan('vender')||roleCan('gestao'),clientes:roleCan('gestao'),fornecedores:roleCan('gestao'),financeiro:roleCan('gestao'),visual:roleCan('gestao'),relatorios:roleCan('gestao'),equipe:myRole==='proprietario'};
+ return permissions[page]===true;
+}
 
 // Galeria privada na nuvem, com seleção e transparência por empresa.
 // O bucket não é público: a leitura das fotos usa URLs temporárias.
@@ -174,7 +185,7 @@ function drawOperations(){
  const access={equipe:myRole==='proprietario',caixas:roleCan('vender')||roleCan('gestao'),relatorios:roleCan('gestao'),
  produtos:roleCan('estoque')||roleCan('vender'),vendas:roleCan('vender'),clientes:roleCan('gestao'),
  fornecedores:roleCan('gestao'),financeiro:roleCan('gestao'),visual:roleCan('gestao')};
- document.querySelectorAll('nav button').forEach(b=>{b.classList.toggle('hide',access[b.dataset.page]===false)});const active=document.querySelector('#work section:not(.hide)');if(active&&access[active.id]===false){document.querySelectorAll('#work section').forEach(s=>s.classList.toggle('hide',s.id!=='inicio'));}
+ document.querySelectorAll('nav button').forEach(b=>{b.classList.toggle('hide',!cfCanOpenPage(b.dataset.page))});const active=document.querySelector('#work section:not(.hide)');if(active&&!cfCanOpenPage(active.id)){document.querySelectorAll('#work section').forEach(s=>s.classList.toggle('hide',s.id!=='inicio'));}
  ['productForm','stockForm'].forEach(id=>$(id).classList.toggle('hide',id==='productForm'?!roleCan('gestao'):!roleCan('estoque')));
  ['clientForm','supplierForm','financeForm'].forEach(id=>$(id).classList.toggle('hide',!roleCan('gestao')));
  $('newRegisterForm').classList.toggle('hide',!roleCan('gestao'));
@@ -201,7 +212,7 @@ function drawOperations(){
    });
   }
  });
- $('teamList').replaceChildren();members.forEach(x=>{
+ $('teamList').replaceChildren();if(myRole==='proprietario')members.forEach(x=>{
   line('teamList',x.nome_exibicao||'Funcionário',x.papel+' · '+x.usuario_id.slice(0,8)+'…');
   if(myRole==='proprietario')actionButton('teamList','Desvincular',async()=>{
    if(!confirm('Remover acesso deste funcionario?'))return;
